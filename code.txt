@@ -1,0 +1,442 @@
+import json
+
+# Public libraries
+from keras.models import model_from_json
+from keras.optimizers import Adam
+from keras.utils import np_utils
+
+# Project
+import config
+import helper
+
+
+DATA_SET = 'test'  # {'test', 'train', 'valid'}
+
+# Load images and labels
+x, y = helper.load_data(DATA_SET)
+
+# Load model
+model_file = config.MODEL_DEFINITION
+with open(model_file, 'r') as jfile:
+    model = model_from_json(json.loads(jfile.read()))
+
+# Compile model and load weights
+model.compile(optimizer=Adam(), loss='categorical_crossentropy',
+              metrics=['accuracy'])
+model.load_weights(config.MODEL_WEIGHTS)
+
+# Evaluate model performace
+print('Evaluating performance on %d samples' % x.shape[0])
+y_cat = np_utils.to_categorical(y, config.NUM_CLASSES)
+scores = model.evaluate(x, y_cat, verbose=0)
+names = model.metrics_names
+for name, score in zip(names, scores):
+    print('%s: \t%.4f' % (name, score))
+
+import keras
+import numpy as np
+
+%matplotlib inline
+
+import matplotlib.pyplot as plt
+from scipy import signal
+import scipy.interpolate.interpnd
+from skimage.measure import structural_similarity as ssim
+
+################ UNTARGETED ###################
+import tensorflow as tf
+jump = 8
+X_test = x
+print(np.max(X_test))
+que = 0
+img1 = np.reshape(X_test[233], (1, 32, 32, 3))#.eval(session=sess)
+imag = np.zeros((20, 32, 32, 3), dtype=np.float32)
+modelx = model
+def good_init(img1, img2, img_i2, que, ch):
+    goal = 1
+    img_i = img_i2#.astype(int)
+    delta = np.max(np.square(img1 - img_i2))
+    k = np.argmax(modelx.predict(np.clip(img_i/1., 0., 255.).astype(int)))#sess.run(tf.argmax(output_layer, 1), feed_dict={X: img_i})
+    que = que + 1
+    #s = (compute_norm(img_i, img1)/15).astype(int)
+    #print(k)
+    while (delta>ch):# | (k != 2):
+        if (k != target):
+            #print("condition 1 satisfied")
+            goal = 1
+            img2 = img_i
+            img2send = np.clip(img_i/1., 0., 255.).astype(int)
+        else:
+            goal = 0
+            #print("condition 2 satisfied")
+            img1 = img_i2
+        img_i2 = (img1 + img2)/2
+        img_i = img_i2#.astype(int)
+        #img_i = np.clip(img_i, 0., 1.)
+        #delta = np.sum(np.square(img1 - img_i2)/(255*255))
+        delta = np.max(np.square(img1 - img_i2))
+        k = np.argmax(modelx.predict(np.clip(img_i/1., 0., 255.).astype(int)))
+        que = que + 1
+        #k = sess.run(tf.argmax(output_layer, 1), feed_dict={X: img_i})
+        #print("one loop complete", delta)
+    return img2, que
+def create_random(img_i, theta, en):
+    i = en
+    add1 = compute_norm(img_i, img1).astype(int)
+    add = theta#np.min([50, add1])
+    rows_0 = np.random.randint(32, size=(i))
+    rows_1 = np.random.randint(32, size=(i))
+    rows_2 = np.random.randint(32, size=(i))
+    cols_0 = np.random.randint(32, size=(i))
+    cols_1 = np.random.randint(32, size=(i))
+    cols_2 = np.random.randint(32, size=(i))
+    sel_random_per = np.random.randint(255, size=(i))/255
+    img_i_p = np.zeros((1, 32, 32, 3), dtype=np.float32)
+    for pix in range(i):
+        img_i_p[0,rows_0[pix], cols_0[pix], 0] = (np.random.randn())*add
+        img_i_p[0,rows_1[pix], cols_1[pix], 1] = (np.random.randn())*add
+        img_i_p[0,rows_2[pix], cols_2[pix], 2] = (np.random.randn())*add
+    img_i_p = img_i_p + img_i
+#     if (pi == 1):
+#       mag_nor = compute_norm(img_i, img1)/compute_norm(img_i_p, img1)
+#       img_i_p = img_i_p*mag_nor
+    return img_i_p
+def simple_norm(img1):
+    return np.sum(np.square(img1/255.))
+def compute_norm(img1, img2):
+    img2 = np.clip(img2, 0., 255.).astype(int)
+    img1 = np.clip(img1, 0., 255.).astype(int)
+    return np.sum(np.square((img1-img2)/255.))
+def sel_direction(img1, img_i, img_i_p):
+    norm1 = compute_norm(img1, img_i)
+    #print("The computed norm is: ", norm1)
+    if (compute_norm(img1, img_i_p) > norm1):
+        # -1 means away from the perturbation
+        direction = -1
+    elif (compute_norm(img1, img_i_p) < norm1):
+        # 1 means towards perturbation
+        direction = 1
+    else:
+        # 0 means don't know
+        direction = 0
+    return direction
+
+def check_condition(img_i):
+  # Please note that we do not count the query made as follows because this is for our own check to manually
+  # ensure a notification, if the algorithm mis-behaves. This was essential for the first draft of the code.
+  # The algorithm works fine without this function being ever called.
+    k = np.argmax(modelx.predict(np.clip(img_i/1., 0., 255.).astype(int)))#sess.run(tf.argmax(output_layer, 1), feed_dict={X: img_i})
+    if (k==target):
+        print("target: ", target, " and K: ", k)
+        print("This is bad")
+
+def find(itr, que, img1, img2, img_i = None, show=False, ch=0.01, theta = 5, en = 20):
+  if img_i is None:
+      img_i = (img1 + img2)/2
+  img_i = img_i.astype(int)
+  img_sp = img_i
+  img_i, que = good_init(img1, img2, img_i, que, ch)
+  que_arr = None#np.reshape(np.array(que), (-1, 1))
+  per_arr = None#np.reshape(np.array(compute_norm(img_i, img1)), (-1, 1))
+  print("Loss of first good initialization = ", compute_norm(img1, img_i))
+#   for i in range(itr):
+  i = 0
+  while (compute_norm(img1, img_i) > 0.15) & (que < itr):
+      attempt = "fail"
+      searcher = 0
+      while (attempt == "fail") & (searcher < 50):
+          img_i_p = create_random(img_i, theta, en)
+          while (compute_norm(img1, img_i_p) == compute_norm(img1, img_i)):
+              img_i_p = create_random(img_i, theta, en)
+          img_i_p, que = good_init(img1, img2, img_i_p, que, ch)
+          check_condition(img_i_p)
+          per = sel_direction(img1, img_i, img_i_p)*(img_i_p - img_i)
+          if sel_direction != 0:
+            img_i_new = img_i + jump*per
+            hop = jump/2
+            hop2 = 1.1
+            while (hop>0.001) & (compute_norm(img_i_new, img1)>compute_norm(img_i, img1)):
+                img_i_new, que = good_init(img1, img2, img_i + hop*per, que, ch)
+                hop = hop/2
+            if (hop > 0.001) | (hop2 >0.001):
+                attempt = "success"
+                if (hop > 0.001):
+                    img_i_new, que = good_init(img1, img2, img_i_new, que, ch)
+                if (compute_norm(img_i_new, img1)<compute_norm(img_i, img1)):
+                    img_i = img_i_new
+                else:
+                    searcher = searcher + 1
+            else:
+                attempt = "fail"
+                searcher = searcher+1
+                if (searcher%100 == 0):
+                    print("seaarcher is: ", searcher)
+            theta = np.clip(0.8*theta, 0.2, 5)
+          check_condition(img_i)
+      if que_arr is None:
+          que_arr = np.reshape(np.array(que), (-1, 1))
+      else:
+          que_arr = np.append(que_arr, np.reshape(que, (-1, 1)), axis=0)
+      if per_arr is None:
+          per_arr = np.reshape(np.array(compute_norm(img_i, img1)), (-1, 1))
+      else:
+          per_arr = np.append(per_arr, np.reshape(compute_norm(img1, img_i), (-1, 1)), axis=0)
+      if (searcher >= 50):
+          print("stopping the search. Could not find a good example in given number of searches")
+          i=10000
+      else:
+          if (i%100 == 0):
+              print("epoch " + str(i) + " complete. with loss: ", str(compute_norm(img1,img_i)))
+              print("Number of queries = ", que)
+              print("*****************************************************************************")
+              if (show == True):
+                plt.figure()
+                plt.imshow(np.reshape(np.clip(img_i[0,:,:,:]/255,0.,1.), (32,32,3)))
+                plt.grid(None)
+                plt.show()
+              img_sp = np.append(img_sp, img_i, axis=2)
+          i = i+1
+  return img_i, que, compute_norm(img1, img_i), img_sp, que_arr, per_arr
+
+# Randomly chosen target examples. Once the numbers were generated we kept them to carry out multiple experiments.
+arn = [1801, 1121, 7126, 920, 6763, 2963, 2979, 6269, 4845, 43]
+# The corresponding class of each target example. This requires one query for each target image.
+pred_arr = np.array([22, 41, 17, 12,  7, 17, 25, 23, 38, 12])
+que2 = 0
+per2 = 0
+ima = img1
+
+# rr = np.random.randint(9999)
+# while rr == arn.any():
+#   rr = np.random.randint(9999)
+
+# We have chosen an index of an isolated class.
+# This can be substituted by a loop which checks for initial image of other class.
+rr = 8293
+
+# for i in range(4):
+#   rr2 = np.random.randint(9999)
+#   while (np.argmax(modelx.predict(X_test[rr:rr+1])) == np.argmax(modelx.predict(X_test[rr2:rr2+1]))):
+#     rr2 = np.random.randint(9999)
+#   arr.append(rr2)
+  
+print("arr", arr)
+print("rr", rr)
+arr = [9763]
+list_image = None
+list_corr = None
+list_per = None
+list_ssim = None
+list_dis = None
+list_coeff = None
+for an in arn:
+  que = 0
+  iterr = 1000
+  img1 = np.reshape(X_test[an], (1, 32, 32, 3))#.eval(session=sess)
+  sd = 0
+  img2 = np.reshape(X_test[rr], (1, 32, 32, 3))
+  print("standard deviation: ", sd)
+  target = np.argmax(modelx.predict(img1/1.))
+  print("image1 is: ", rr, "with prediction", np.argmax(modelx.predict(img2/1.)))
+  print("image2 is: ", target)
+  diff = (img2 -img1)
+  with tf.device('/gpu:0'):
+    img_i, que, per, img_sp, q1, p1 = find(iterr, que, img1, img2, img_i = (img1 + img2)/2, ch=0.01, theta=5, en=20)
+    ima_i = img_i
+    corra_i = signal.correlate2d(np.mean(img1[0], axis=2), np.mean(img_i[0], axis=2))
+    coeff = np.corrcoef(img1.flat, img_i.flat)[0,1:2]
+    per_i = (img_i - img1)*0.5 + 128
+    list_ssim2 = ssim(np.reshape(np.clip(img_i/255, 0., 1.), (32, 32 ,3)), np.reshape(np.clip(img1/255, 0., 1.), (32, 32 ,3)), multichannel=True)
+    list_dis2 = np.sum(np.square((img_i - img1)/255))
+    que2 = que2 + que
+    per2 = per2 + per
+    que = 0
+    img_i, que, per, img_sp, q2, p2 = find(iterr, que, img1, img2, img_i = (img1 + img2)/2, ch=5, theta=5, en=20)
+    ima_i = np.append(ima_i, img_i, axis = 1)
+    corra_i = np.append(corra_i, signal.correlate2d(np.mean(img1[0], axis=2), np.mean(img_i[0], axis=2)), axis=0)
+    coeff = np.append(coeff, np.corrcoef(img1.flat, img_i.flat)[0,1:2], axis = 0)
+    per_i = np.append(per_i, (img_i - img1)*0.5 + 128, axis = 1)
+    list_ssim2 = np.append(list_ssim2, ssim(np.reshape(np.clip(img_i/255, 0., 1.), (32, 32 ,3)), np.reshape(np.clip(img1/255, 0., 1.), (32, 32 ,3)), multichannel=True))
+    list_dis2 = np.append(list_dis2, np.sum(np.square((img_i - img1)/255)))
+    que2 = que2 + que
+    per2 = per2 + per
+    que = 0
+    img_i, que, per, img_sp, q3, p3 = find(iterr, que, img1, img2, img_i = (img1 + img2)/2, ch=10, theta=5, en=20)
+    ima_i = np.append(ima_i, img_i, axis = 1)
+    corra_i = np.append(corra_i, signal.correlate2d(np.mean(img1[0], axis=2), np.mean(img_i[0], axis=2)), axis=0)
+    coeff = np.append(coeff, np.corrcoef(img1.flat, img_i.flat)[0,1:2], axis = 0)
+    per_i = np.append(per_i, (img_i - img1)*0.5 + 128, axis = 1)
+    list_ssim2 = np.append(list_ssim2, ssim(np.reshape(np.clip(img_i/255, 0., 1.), (32, 32 ,3)), np.reshape(np.clip(img1/255, 0., 1.), (32, 32 ,3)), multichannel=True))
+    list_dis2 = np.append(list_dis2, np.sum(np.square((img_i - img1)/255)))
+    que2 = que2 + que
+    per2 = per2 + per
+    que = 0
+    img_i, que, per, img_sp, q4, p4 = find(iterr, que, img1, img2, img_i = (img1 + img2)/2, ch=15, theta=5, en=20)
+    ima_i = np.append(ima_i, img_i, axis = 1)
+    corra_i = np.append(corra_i, signal.correlate2d(np.mean(img1[0], axis=2), np.mean(img_i[0], axis=2)), axis=0)
+    coeff = np.append(coeff, np.corrcoef(img1.flat, img_i.flat)[0,1:2], axis = 0)
+    per_i = np.append(per_i, (img_i - img1)*0.5 + 128, axis = 1)
+    list_ssim2 = np.append(list_ssim2, ssim(np.reshape(np.clip(img_i/255, 0., 1.), (32, 32 ,3)), np.reshape(np.clip(img1/255, 0., 1.), (32, 32 ,3)), multichannel=True))
+    list_dis2 = np.append(list_dis2, np.sum(np.square((img_i - img1)/255)))
+    que2 = que2 + que
+    per2 = per2 + per
+    if list_image is None:
+      list_image = ima_i
+      list_corr = (corra_i - np.min(corra_i))/np.max(corra_i - np.min(corra_i))
+      list_per = per_i
+      list_ssim = np.array([list_ssim2])
+      list_dis = np.array([list_dis2])
+      list_coeff = np.array([coeff])
+    else:
+      list_image = np.append(list_image, ima_i, axis=2)
+      list_corr = np.append(list_corr, (corra_i - np.min(corra_i))/np.max(corra_i - np.min(corra_i)), axis=1)
+      list_per = np.append(list_per, per_i, axis=2)
+      list_ssim = np.append(list_ssim, np.array([list_ssim2]), axis = 0)
+      list_dis = np.append(list_dis, np.array([list_dis2]), axis = 0)
+      list_coeff = np.append(list_coeff, np.array([coeff]), axis = 0)
+    nm = np.round(i*1.5)
+    plt.figure()
+    plt.imshow(np.reshape(np.clip(list_image[0,:,:,:]/255,0.,1.), (32*4, -1, 3)))
+    plt.grid(None)
+    plt.figure()
+    plt.imshow(np.reshape(np.clip(list_per[0,:,:,:]/255,0.,1.), (32*4, -1, 3)))
+    plt.grid(None)
+    plt.figure()
+    plt.imshow(list_corr)
+    plt.grid(None)
+    plt.show()
+  print("****************************************************************************")
+  print("****************************************************************************")
+  print("Next image......: Sum Que: ", que2, "Sum per: ", per2)
+  print("****************************************************************************")
+  print("****************************************************************************")
+  ima = np.append(ima, img_i, axis = 1)
+  plt.figure()
+  plt.imshow(np.reshape(np.clip(img_sp[0,:,:,:]/255,0.,1.), (32, -1, 3)))
+  plt.grid(None)
+  plt.show()
+  plt.figure()
+  plt.plot(q1, p1, 'red', q2, p2, 'gray', q3, p3, 'green', q4, p4, 'blue')
+  plt.legend(loc='upper right')
+  plt.show()
+
+
+#img_i, que = good_init(img1, img2, img_i, que)
+print(ima.shape)
+plt.figure()
+plt.imshow(np.reshape(np.clip(ima[0,:,:,:]/255,0.,1.), (-1, 32, 3)))
+plt.grid(None)
+prediction, j = model.predict(img_i), np.argmax(model.predict(img_i))
+print ("Prediction for test image:", prediction)
+prediction, j = modelx.predict(img_i), np.argmax(modelx.predict(img_i))
+print ("Prediction for test image:", prediction)
+print(j)
+
+nm = 15
+plt.figure(figsize=(nm,nm))
+plt.imshow(np.reshape(np.clip(list_image[0,:,:,:]/255,0.,1.), (32*4, -1, 3)))
+plt.grid(None)
+plt.figure(figsize=(nm,nm))
+plt.imshow(np.reshape(np.clip(list_per[0,:,:,:]/255,0.,1.), (32*4, -1, 3)))
+plt.grid(None)
+plt.figure(figsize=(nm,nm))
+plt.imshow(list_corr)
+plt.grid(None)
+plt.show()
+
+print("distance: ", list_dis)
+print()
+print("ssim: ", list_ssim)
+print()
+print("coeffi: ", list_coeff)
+print("*******************************************************")
+dec_dis = np.array([94.86224,
+275.8327,
+293.07037,
+269.17316,
+13.010953,
+76.90643,
+260.63293,
+263.68057,
+184.53622,
+14.828208
+])
+dec_ssim = np.array([0,
+0.291981602,
+0.198320954,
+0.104189915,
+0.753694868,
+0.606492152,
+0.14828187,
+0.30115949,
+0.081775244,
+0.353548294
+])
+dec_coeff = np.array([0.60762469,
+0.4998538,
+0.39625458,
+0.16794389,
+0.89897352,
+0.87889997,
+0.25128829,
+0.37863481,
+0.24125022,
+0.65128716
+])
+print("*******************************************************")
+print("Decision distance: ", dec_dis)
+print("Decision SSIM: ", dec_ssim)
+dis_1 = list_dis[:,0]
+print(dis_1.shape)
+objects = ('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J')
+plt.figure()
+index = np.arange(len(objects))
+bar_width = 0.15
+plt.bar(index, dec_dis, bar_width, color='black', label='Decision')
+plt.bar(index+bar_width, list_dis[:, 0], bar_width, color='red', label='5')
+plt.bar(index+2*bar_width, list_dis[:, 1], bar_width, color='grey', label='10')
+plt.bar(index+3*bar_width, list_dis[:, 1], bar_width, color='green', label='30')
+plt.bar(index+4*bar_width, list_dis[:, 1], bar_width, color='blue', label='50')
+plt.ylabel('Norm')
+plt.xticks(np.arange(len(objects)), objects)
+plt.legend()
+plt.show()
+plt.figure()
+index = np.arange(len(objects))
+bar_width = 0.12
+plt.bar(index, dec_ssim, bar_width, color='black', label='Decision')
+plt.bar(index+bar_width, list_ssim[:, 0], bar_width, color='red', label='5')
+plt.bar(index+2*bar_width, list_ssim[:, 1], bar_width, color='grey', label='10')
+plt.bar(index+3*bar_width, list_ssim[:, 1], bar_width, color='green', label='30')
+plt.bar(index+4*bar_width, list_ssim[:, 1], bar_width, color='blue', label='50')
+plt.ylabel('Structural Similarity Index')
+plt.xticks(np.arange(len(objects)), objects)
+plt.legend()
+plt.show()
+plt.figure()
+index = np.arange(len(objects))
+bar_width = 0.15
+plt.bar(index, dec_coeff, bar_width, color='black', label='Decision')
+plt.bar(index+bar_width, list_coeff[:, 0], bar_width, color='red', label='5')
+plt.bar(index+2*bar_width, list_coeff[:, 1], bar_width, color='grey', label='10')
+plt.bar(index+3*bar_width, list_coeff[:, 1], bar_width, color='green', label='30')
+plt.bar(index+4*bar_width, list_coeff[:, 1], bar_width, color='blue', label='50')
+plt.ylabel('Correlation Coefficient')
+plt.xticks(np.arange(len(objects)), objects)
+plt.legend()
+plt.show()
+
+img_number = 2
+img_all_list_GTSRB = np.reshape(np.clip(list_image[0,:,:,:],0.,255.).astype(int), (4, 32, -1, 3))
+img_shortlist = np.reshape(img_all_list_GTSRB[0,:,32*(img_number-1):32*img_number,:], (32, 32, 3))
+img_actual = X_test[arn[img_number-1]]
+print(img_shortlist.shape)
+print("min: ", np.min(img_all_list_GTSRB), "max: ", np.max(img_all_list_GTSRB))
+print("adversarial class", np.argmax(model.predict(np.reshape(img_shortlist, (1, 32, 32, 3)))))
+print("real class", np.argmax(model.predict(np.reshape(img_actual, (1, 32, 32, 3)))))
+plt.figure()
+plt.imshow(img_shortlist)
+plt.grid(None)
+plt.figure()
+plt.imshow(img_actual)
+plt.grid(None)
